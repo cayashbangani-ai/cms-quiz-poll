@@ -127,9 +127,7 @@
       align-items: center;
     }
 
-    .form-group {
-      margin-bottom: 14px;
-    }
+    .form-group { margin-bottom: 14px; }
     .form-group label {
       display: block;
       font-weight: 600;
@@ -222,9 +220,7 @@
       border-radius: 8px;
       border: 1px dashed var(--gold-dark);
     }
-    .telemetry-bar-wrap {
-      margin-bottom: 10px;
-    }
+    .telemetry-bar-wrap { margin-bottom: 10px; }
     .telemetry-bar-label {
       display: flex;
       justify-content: space-between;
@@ -293,10 +289,7 @@
       padding: 8px 10px;
       text-align: left;
     }
-    th {
-      background: #250b0b;
-      color: var(--gold);
-    }
+    th { background: #250b0b; color: var(--gold); }
     tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
 
     .hidden { display: none !important; }
@@ -328,7 +321,7 @@
         <span id="pRoundTitle">Round 1</span>
         <div id="pStatusBadge" class="status-badge status-closed">
           <div class="pulse-dot"></div>
-          <span id="pStatusText">VOTING CLOSED</span>
+          <span id="pStatusText">CONNECTING...</span>
         </div>
       </div>
 
@@ -364,7 +357,6 @@
       <div style="margin-top: 24px;">
         <h4 style="font-family: 'Cinzel', serif; color: var(--gold); margin-bottom: 8px;">Round Results</h4>
         
-        <!-- Animated Telemetry while unreleased -->
         <div id="pTelemetryBox" class="telemetry-container">
           <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--gold); margin-bottom: 8px;">
             <span>⚡ Live Incoming Vote Stream (Calculating...)</span>
@@ -373,7 +365,6 @@
           <div id="telemetryBarsList"></div>
         </div>
 
-        <!-- Official Aggregated Chart -->
         <div id="pOfficialResultsBox" class="card hidden" style="background: rgba(0,0,0,0.5); padding: 14px;">
           <div id="officialResultsList"></div>
         </div>
@@ -383,7 +374,6 @@
     <!-- ================= HOST VIEW ================= -->
     <div id="hostView" class="card hidden">
 
-      <!-- Host Login Gate -->
       <div id="hostGateBox">
         <div class="card-title">Host Security Clearance</div>
         <p style="font-size: 0.9rem; margin-bottom: 14px; color: #caa;">Restricted console. Only authorized show hosts can unlock stage controls.</p>
@@ -399,14 +389,12 @@
         <button class="nav-btn" onclick="verifyHostLogin()">Unlock Host Console</button>
       </div>
 
-      <!-- Host Dashboard (Unlocked) -->
       <div id="hostDashboardBox" class="hidden">
         <div class="card-title">
           <span>Master Stage Director Console</span>
           <button class="host-btn btn-dark" onclick="lockHostConsole()">Lock Console</button>
         </div>
 
-        <!-- Controls Bar -->
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.4); border-radius: 8px; border: 1px solid #4a2222;">
           <button id="hStartRoundBtn" class="host-btn btn-green" onclick="hostToggleRound(true)">▶ Open / Start Round</button>
           <button id="hStopRoundBtn" class="host-btn btn-red" onclick="hostToggleRound(false)">⏹ Hard Close Round</button>
@@ -416,7 +404,6 @@
           <button class="host-btn btn-red" style="margin-left: auto;" onclick="hostEndEntireSession()">⚠ End Session & Purge All</button>
         </div>
 
-        <!-- Round Configurations -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
           <div class="form-group">
             <label>Round Title / Number</label>
@@ -435,11 +422,9 @@
           </div>
         </div>
 
-        <!-- Options Configuration -->
         <h4 style="font-family: 'Cinzel', serif; color: var(--gold); margin-bottom: 8px;">Active Options Pool (Persistent Pool)</h4>
         <div id="hOptionsList" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 20px;"></div>
 
-        <!-- Voter Audit Logs (Host Only) -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
           <h4 style="font-family: 'Cinzel', serif; color: var(--gold);">Confidential Voter Audit Log (<span id="hVoterCount">0</span> votes)</h4>
           <button class="host-btn btn-dark" onclick="exportVotesCSV()">📥 Export CSV</button>
@@ -480,6 +465,10 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    // Dedicated collections for CMS Quiz Poll (prevents old Villains data collision)
+    const STATE_COLLECTION = "cms_quiz_poll";
+    const VOTES_COLLECTION = "cms_poll_votes";
+
     const HOST_EMAIL = "yashbangani.ai@gmail.com";
     const HOST_PASSCODE = "060925";
 
@@ -508,9 +497,14 @@
     let countdownInterval = null;
     let telemetryInterval = null;
 
+    function handleFirebaseError(err) {
+      console.error("Firebase Sync Error:", err);
+      document.getElementById("pStatusText").textContent = "DB CONNECTION ERROR";
+      alert("Firebase Database Error: " + err.message + "\n\nCheck if Firestore Security Rules have expired in Firebase Console.");
+    }
+
     function startRealtimeSync() {
-      // 1. Listen to poll state
-      db.collection("quiz_poll").doc("state").onSnapshot(doc => {
+      db.collection(STATE_COLLECTION).doc("state").onSnapshot(doc => {
         if (doc.exists) {
           state = doc.data();
           renderUI();
@@ -519,19 +513,19 @@
             renderHostDashboard();
           }
         } else {
-          db.collection("quiz_poll").doc("state").set(state);
+          db.collection(STATE_COLLECTION).doc("state").set(state).catch(handleFirebaseError);
+          renderUI();
         }
-      });
+      }, handleFirebaseError);
 
-      // 2. Direct clean listener for all votes
-      db.collection("poll_votes").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+      db.collection(VOTES_COLLECTION).orderBy("timestamp", "desc").onSnapshot(snapshot => {
         localVotes = [];
         snapshot.forEach(doc => {
           localVotes.push(doc.data());
         });
         renderAuditLogs();
         renderOfficialResults();
-      });
+      }, handleFirebaseError);
     }
 
     function switchPortal(portal) {
@@ -563,10 +557,8 @@
       document.getElementById("hostPasscodeInput").value = "";
     }
 
-    // Handles dynamically disabling self-voting whenever team changes
     function handleTeamChange() {
       const chosenTeam = document.getElementById("voterTeamDropdown").value;
-      // If user had selected their own team's candidate, remove it from selection
       if (chosenTeam && selectedPicks.includes(chosenTeam)) {
         selectedPicks = selectedPicks.filter(item => item !== chosenTeam);
       }
@@ -579,7 +571,6 @@
       const statusText = document.getElementById("pStatusText");
       const submitBtn = document.getElementById("pSubmitBtn");
 
-      // Populate Team Dropdown
       const teamDropdown = document.getElementById("voterTeamDropdown");
       const currentTeam = teamDropdown.value;
       teamDropdown.innerHTML = `<option value="">-- Choose Your Team --</option>`;
@@ -593,7 +584,6 @@
 
       const myTeam = teamDropdown.value;
 
-      // Render Option Cards
       const grid = document.getElementById("pOptionsGrid");
       grid.innerHTML = "";
       (state.options || defaultOptions).forEach(opt => {
@@ -613,7 +603,7 @@
 
         const img = document.createElement("img");
         img.className = "option-thumb";
-        img.src = opt.img || "villain1.png";
+        img.src = opt.img || "Singham.png";
         img.alt = opt.name;
         img.onerror = () => { img.src = "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=300"; };
 
@@ -626,7 +616,6 @@
         grid.appendChild(card);
       });
 
-      // Handle Session Status Display
       if (state.sessionEnded) {
         statusBadge.className = "status-badge status-ended";
         statusText.textContent = "SESSION CONCLUDED";
@@ -651,7 +640,6 @@
       document.getElementById("pInstructionText").textContent = state.allowMultiple ? 
         "Select one or more choices for this round (excluding your own team):" : "Select your single choice for this round (excluding your own team):";
 
-      // Timer countdown
       clearInterval(countdownInterval);
       if (state.isOpen && state.roundEndAt) {
         countdownInterval = setInterval(() => {
@@ -660,6 +648,10 @@
           document.getElementById("pTimerText").textContent = `Timer: ${left}s`;
           if (left <= 0) {
             clearInterval(countdownInterval);
+            statusBadge.className = "status-badge status-closed";
+            statusText.textContent = "TIME EXPIRED";
+            submitBtn.disabled = true;
+            submitBtn.textContent = "TIME EXPIRED";
             if (!document.getElementById("hostDashboardBox").classList.contains("hidden")) {
               hostToggleRound(false);
             }
@@ -669,7 +661,6 @@
         document.getElementById("pTimerText").textContent = "Timer: --";
       }
 
-      // Show results ONLY if published, otherwise show telemetry
       if (state.isPublished) {
         document.getElementById("pTelemetryBox").classList.add("hidden");
         document.getElementById("pOfficialResultsBox").classList.remove("hidden");
@@ -681,6 +672,7 @@
 
     function toggleSelectPick(name) {
       if (!state.isOpen || state.sessionEnded) return;
+      if (state.roundEndAt && Date.now() > state.roundEndAt) return alert("Time has expired for this round!");
 
       const myTeam = document.getElementById("voterTeamDropdown").value;
       if (myTeam && name === myTeam) {
@@ -700,18 +692,19 @@
       renderUI();
     }
 
-    function submitParticipantVote() {
+    async function submitParticipantVote() {
       if (!state.isOpen || state.sessionEnded) return alert("Voting lines are closed!");
+      if (state.roundEndAt && Date.now() > state.roundEndAt) return alert("Time has expired for this round!");
       
       const name = document.getElementById("voterName").value.trim();
-      const whatsapp = document.getElementById("voterWhatsApp").value.trim();
+      const rawWhatsapp = document.getElementById("voterWhatsApp").value.trim();
+      const whatsapp = rawWhatsapp.replace(/\D/g, '').slice(-10);
       const team = document.getElementById("voterTeamDropdown").value;
 
-      if (!name || !whatsapp || !team) {
-        return alert("Please enter Name, WhatsApp number, and choose your Team from the dropdown!");
+      if (!name || whatsapp.length < 10 || !team) {
+        return alert("Please enter your Name, a valid 10-digit WhatsApp number, and choose your Team!");
       }
 
-      // Rule 2: Cannot vote for own team
       if (selectedPicks.includes(team)) {
         return alert("You cannot vote for your own team! Please deselect your team's candidate.");
       }
@@ -720,34 +713,41 @@
         return alert("Please select at least one eligible option card before submitting!");
       }
 
-      // Rule 1: Check duplicate WhatsApp AND duplicate Team in the active round
       const currentRoundVotes = localVotes.filter(v => v.round === state.round);
 
-      const duplicateWhatsApp = currentRoundVotes.some(v => v.whatsapp === whatsapp);
-      if (duplicateWhatsApp) {
+      if (currentRoundVotes.some(v => v.whatsapp === whatsapp)) {
         return alert("This WhatsApp number has already voted in this round!");
       }
 
-      const duplicateTeam = currentRoundVotes.some(v => v.team === team);
-      if (duplicateTeam) {
+      if (currentRoundVotes.some(v => v.team === team)) {
         return alert(`Team "${team}" has already cast its vote in this round! Only one vote per team is allowed.`);
       }
 
-      // Record to Firestore
-      db.collection("poll_votes").add({
-        round: state.round,
-        name: name,
-        whatsapp: whatsapp,
-        team: team,
-        picks: selectedPicks,
-        timestamp: Date.now()
-      }).then(() => {
+      // Deterministic Doc ID prevents simultaneous double-submission race conditions per team
+      const safeDocId = `${state.round}_${team}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const voteRef = db.collection(VOTES_COLLECTION).doc(safeDocId);
+
+      try {
+        const existingDoc = await voteRef.get();
+        if (existingDoc.exists) {
+          return alert(`Team "${team}" has already locked in its vote for ${state.round}!`);
+        }
+
+        await voteRef.set({
+          round: state.round,
+          name: name,
+          whatsapp: whatsapp,
+          team: team,
+          picks: selectedPicks,
+          timestamp: Date.now()
+        });
+
         alert("🎉 Your official vote has been recorded live!");
         selectedPicks = [];
         renderUI();
-      }).catch(err => {
+      } catch (err) {
         alert("Error saving vote: " + err.message);
-      });
+      }
     }
 
     function renderOfficialResults() {
@@ -792,7 +792,7 @@
       const list = document.getElementById("telemetryBarsList");
       clearInterval(telemetryInterval);
       telemetryInterval = setInterval(() => {
-        if (state.isPublished) return;
+        if (state.isPublished || !state.isOpen) return;
         list.innerHTML = "";
         (state.options || defaultOptions).forEach(o => {
           const rand = Math.floor(Math.random() * 70) + 15;
@@ -809,7 +809,7 @@
           `;
           list.appendChild(div);
         });
-      }, 1000);
+      }, 1500);
     }
 
     function renderHostDashboard() {
@@ -828,7 +828,7 @@
         card.innerHTML = `
           <div style="font-weight:700; color:var(--gold); margin-bottom:4px;">Option ${idx + 1}</div>
           <input type="text" class="form-control" value="${opt.name}" style="margin-bottom:6px;" onchange="updateOptionName(${idx}, this.value)">
-          <input type="text" class="form-control" value="${opt.img}" placeholder="Image file name (e.g. villain1.png)" onchange="updateOptionImg(${idx}, this.value)">
+          <input type="text" class="form-control" value="${opt.img}" placeholder="Image file name (e.g. Singham.png)" onchange="updateOptionImg(${idx}, this.value)">
         `;
         optContainer.appendChild(card);
       });
@@ -836,11 +836,9 @@
 
     async function purgeAllVotesFromFirestore() {
       try {
-        const snap = await db.collection("poll_votes").get();
+        const snap = await db.collection(VOTES_COLLECTION).get();
         const batch = db.batch();
-        snap.docs.forEach(doc => {
-          batch.delete(doc.ref);
-        });
+        snap.docs.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
       } catch (err) {
         console.error("Purge error:", err);
@@ -850,17 +848,16 @@
       renderOfficialResults();
     }
 
-    // Host Controls
     function hostToggleRound(open) {
       state.sessionEnded = false;
       state.isOpen = open;
       state.roundEndAt = open ? (Date.now() + (state.timerSeconds * 1000)) : null;
-      db.collection("quiz_poll").doc("state").set(state);
+      db.collection(STATE_COLLECTION).doc("state").set(state);
     }
 
     function hostPublishResults() {
       state.isPublished = true;
-      db.collection("quiz_poll").doc("state").set(state);
+      db.collection(STATE_COLLECTION).doc("state").set(state);
     }
 
     function hostAdvanceRound() {
@@ -870,7 +867,7 @@
       state.isOpen = false;
       state.isPublished = false;
       state.sessionEnded = false;
-      db.collection("quiz_poll").doc("state").set(state);
+      db.collection(STATE_COLLECTION).doc("state").set(state);
     }
 
     async function hostResetEntireSession() {
@@ -880,8 +877,9 @@
         state.isOpen = false;
         state.isPublished = false;
         state.sessionEnded = false;
-        await db.collection("quiz_poll").doc("state").set(state);
-        alert("Session refreshed! Audit log and results have been completely wiped.");
+        state.options = [...defaultOptions];
+        await db.collection(STATE_COLLECTION).doc("state").set(state);
+        alert("Session refreshed! Audit log and options have been reset.");
       }
     }
 
@@ -890,16 +888,16 @@
         await purgeAllVotesFromFirestore();
         state.isOpen = false;
         state.sessionEnded = true;
-        await db.collection("quiz_poll").doc("state").set(state);
+        await db.collection(STATE_COLLECTION).doc("state").set(state);
         alert("Session ended and all logs purged clean.");
       }
     }
 
-    function hostUpdateRoundTitle(v) { state.round = v; db.collection("quiz_poll").doc("state").set(state); }
-    function hostUpdateTimer(v) { state.timerSeconds = parseInt(v) || 60; db.collection("quiz_poll").doc("state").set(state); }
-    function hostUpdateMode(v) { state.allowMultiple = (v === "multiple"); db.collection("quiz_poll").doc("state").set(state); }
-    function updateOptionName(idx, val) { state.options[idx].name = val; db.collection("quiz_poll").doc("state").set(state); }
-    function updateOptionImg(idx, val) { state.options[idx].img = val; db.collection("quiz_poll").doc("state").set(state); }
+    function hostUpdateRoundTitle(v) { state.round = v; db.collection(STATE_COLLECTION).doc("state").set(state); }
+    function hostUpdateTimer(v) { state.timerSeconds = parseInt(v) || 60; db.collection(STATE_COLLECTION).doc("state").set(state); }
+    function hostUpdateMode(v) { state.allowMultiple = (v === "multiple"); db.collection(STATE_COLLECTION).doc("state").set(state); }
+    function updateOptionName(idx, val) { state.options[idx].name = val; db.collection(STATE_COLLECTION).doc("state").set(state); }
+    function updateOptionImg(idx, val) { state.options[idx].img = val; db.collection(STATE_COLLECTION).doc("state").set(state); }
 
     function renderAuditLogs() {
       const tbody = document.getElementById("hAuditTableBody");
@@ -936,7 +934,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Poll_Votes_Audit_${Date.now()}.csv`;
+      a.download = `CMS_Poll_Votes_Audit_${Date.now()}.csv`;
       a.click();
     }
 
